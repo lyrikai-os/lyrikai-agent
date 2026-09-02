@@ -1,0 +1,5 @@
+.DS_Store
+
+# Optional: track plan-suites attic only — see tip factory/PLANNING-ATTIC.md §6
+# .admin/*
+# !.admin/docs/plan-suites/
