@@ -1,5 +1,10 @@
 .DS_Store
 
+work/archives/
+work/products/*/
+!work/README.md
+!work/.gitkeep
+
 # Optional: track plan-suites attic only — see tip factory/PLANNING-ATTIC.md §6
 # .admin/*
 # !.admin/docs/plan-suites/

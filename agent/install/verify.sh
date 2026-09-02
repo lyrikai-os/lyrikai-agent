@@ -1,130 +1,124 @@
 #!/usr/bin/env bash
-# verify.sh — Lyrikai Super Agent install verification
+# verify.sh — Lyrikai Agent v1 install verification (Cursor only)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LYRIKAI_AGENT_ROOT="${LYRIKAI_AGENT_ROOT:-$(cd "$SCRIPT_DIR/../../" && pwd)}"
-LK_BLOOM="${LK_BLOOM:-$(cd "$LYRIKAI_AGENT_ROOT/.." && pwd)}"
-HIVE_TIP_SKILLS="${HIVE_TIP_SKILLS:-$LK_BLOOM/hive-vip-1/hive-vip-1_main/factory/skills}"
-HIVE_TIP_ROOT="${HIVE_TIP_ROOT:-$(dirname "$(dirname "$HIVE_TIP_SKILLS")")}"
-CLAUDE_SKILLS="${CLAUDE_SKILLS:-$HOME/.claude/skills}"
+LK_AGENT_WORK_ROOT="${LK_AGENT_WORK_ROOT:-$LYRIKAI_AGENT_ROOT/work}"
+CURSOR_SKILLS="${CURSOR_SKILLS:-$HOME/.cursor/skills}"
 CURSOR_AGENTS="${CURSOR_AGENTS:-$HOME/.cursor/agents}"
-TIP_PIN_FILE="$SCRIPT_DIR/tip_pin.txt"
+LYRIKAI_CONFIG="${LYRIKAI_CONFIG:-$HOME/.lyrikai/config}"
 
-STRICT=false
-
-FOUNDATION_RING=(hive-queen trinity wiki-log hive)
-HIVE_OPS_RING=(hive-agents hive-adversary-agents hive-workstreams hive-meta-map hive-mvp-seed)
-PLAN_ARCHIVE_RING=(build-plan-suite gear-set re-app excavate-design-index)
-SHIP_RING=(super-build-trinity super-build closeout prep-prompt audit-prompt instruction-manual)
-
-CORE_AGENT_FILES=(
-  AGENT-CARD.md
-  LYRIKAI-BOOT.md
-  SCENE-ROUTER.md
-  TRUST-GATES.md
-  MANIFEST.md
+BUNDLED_SKILLS=(
+  lyrikai-agent
+  lk_hive_v1
+  lk_hive-queen_v1
+  lk_re-app_v1
+  lk_trinity_v1
+  lk_build-plan-suite_v1
+  lk_gear-set_v1
+  lk_super-build-trinity_v1
+  lk_spin-agents_v1
+  lk_prep-prompt_v1
+  lk_closeout_v1
+  lk_handoff_v1
+  lk_hive-agents_v1
+  lk_audit-prompt_v1
 )
+
+REPO_CHECKS=(
+  WORK-HOME.md
+  ROUTING.md
+  skills/BUNDLE.md
+  skills/lyrikai-agent/SKILL.md
+  work/README.md
+)
+
+FAILURES=()
 
 usage() {
   cat <<EOF
-Lyrikai Super Agent verify
+Lyrikai Agent verify
 
-Usage: $0 [--strict]
-
-  --strict   Exit 1 on tip_pin drift (default: warn only, exit 2)
+Usage: $0 [-h|--help]
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --strict) STRICT=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown flag: $1" >&2; usage >&2; exit 1 ;;
   esac
 done
 
-FAILURES=()
-DRIFT=false
+check_skill_symlink() {
+  local name="$1"
+  local path="$CURSOR_SKILLS/$name"
+  local expected="$LYRIKAI_AGENT_ROOT/skills/$name"
 
-check_skill() {
-  local slug="$1"
-  local path="$CLAUDE_SKILLS/$slug"
-  if [[ ! -e "$path" ]]; then
-    FAILURES+=("missing skill: $path")
+  if [[ ! -L "$path" ]]; then
+    FAILURES+=("skill not symlink: $path")
     return 1
   fi
-  if [[ -L "$path" ]]; then
-    local target
-    target="$(readlink "$path")"
-    if [[ ! -d "$target" ]]; then
-      FAILURES+=("broken symlink: $path → $target")
-      return 1
-    fi
-  elif [[ ! -d "$path" ]]; then
-    FAILURES+=("skill not a directory: $path")
+
+  local target
+  target="$(readlink "$path")"
+  if [[ "$target" != "$expected" ]]; then
+    FAILURES+=("skill symlink target mismatch: $path → $target (expected $expected)")
+    return 1
+  fi
+
+  if [[ ! -f "$target/SKILL.md" ]]; then
+    FAILURES+=("missing SKILL.md in bundle: $target")
     return 1
   fi
   return 0
 }
 
-check_core_files() {
-  for f in "${CORE_AGENT_FILES[@]}"; do
-    local p="$LYRIKAI_AGENT_ROOT/agent/$f"
+check_repo_files() {
+  for rel in "${REPO_CHECKS[@]}"; do
+    local p="$LYRIKAI_AGENT_ROOT/$rel"
     if [[ ! -f "$p" ]]; then
-      FAILURES+=("missing core file: $p")
+      FAILURES+=("missing repo file: $p")
     fi
   done
 }
 
 check_agent_file() {
-  local p="$CURSOR_AGENTS/lyrikai-super.md"
+  local p="$CURSOR_AGENTS/lyrikai-agent.md"
   if [[ ! -f "$p" ]]; then
     FAILURES+=("missing Cursor agent: $p")
   fi
 }
 
-check_tip_pin() {
-  if [[ ! -f "$TIP_PIN_FILE" ]]; then
-    FAILURES+=("missing tip_pin: $TIP_PIN_FILE (run install.sh)")
+check_config() {
+  if [[ ! -f "$LYRIKAI_CONFIG" ]]; then
+    FAILURES+=("missing config: $LYRIKAI_CONFIG")
     return
   fi
-
-  if [[ ! -d "$HIVE_TIP_ROOT/.git" ]]; then
-    echo "WARN: tip root not git — skip tip_pin drift check"
-    return
+  local root work_root
+  root="$(grep -E '^LYRIKAI_AGENT_ROOT=' "$LYRIKAI_CONFIG" | cut -d= -f2- || true)"
+  work_root="$(grep -E '^LK_AGENT_WORK_ROOT=' "$LYRIKAI_CONFIG" | cut -d= -f2- || true)"
+  if [[ "$root" != "$LYRIKAI_AGENT_ROOT" ]]; then
+    FAILURES+=("LYRIKAI_AGENT_ROOT mismatch in $LYRIKAI_CONFIG: got '$root' expected '$LYRIKAI_AGENT_ROOT'")
   fi
-
-  local pinned current
-  pinned="$(tr -d '[:space:]' < "$TIP_PIN_FILE")"
-  current="$(git -C "$HIVE_TIP_ROOT" rev-parse HEAD)"
-
-  if [[ "$pinned" != "$current" ]]; then
-    DRIFT=true
-    echo "WARN: tip_pin drift — pinned=$pinned current=$current"
-    echo "      Re-run install.sh to refresh, or git pull tip"
-  else
-    echo "tip_pin ok: $pinned"
+  if [[ "$work_root" != "$LK_AGENT_WORK_ROOT" ]]; then
+    FAILURES+=("LK_AGENT_WORK_ROOT mismatch in $LYRIKAI_CONFIG: got '$work_root' expected '$LK_AGENT_WORK_ROOT'")
   fi
 }
 
-echo "Lyrikai Super Agent verify"
+echo "Lyrikai Agent verify"
 echo "  LYRIKAI_AGENT_ROOT=$LYRIKAI_AGENT_ROOT"
+echo "  LK_AGENT_WORK_ROOT=$LK_AGENT_WORK_ROOT"
+echo ""
 
-check_core_files
+check_repo_files
+check_config
 check_agent_file
 
-ALL_SLUGS=()
-ALL_SLUGS+=("${FOUNDATION_RING[@]}")
-ALL_SLUGS+=("${HIVE_OPS_RING[@]}")
-ALL_SLUGS+=("${PLAN_ARCHIVE_RING[@]}")
-ALL_SLUGS+=("${SHIP_RING[@]}")
-
-for slug in "${ALL_SLUGS[@]}"; do
-  check_skill "$slug" || true
+for name in "${BUNDLED_SKILLS[@]}"; do
+  check_skill_symlink "$name" || true
 done
-
-check_tip_pin
 
 if [[ ${#FAILURES[@]} -gt 0 ]]; then
   echo ""
@@ -135,17 +129,6 @@ if [[ ${#FAILURES[@]} -gt 0 ]]; then
   exit 1
 fi
 
-if $DRIFT; then
-  if $STRICT; then
-    echo ""
-    echo "FAIL: tip_pin drift (--strict)"
-    exit 1
-  fi
-  echo ""
-  echo "PASS with tip drift warning (exit 2)"
-  exit 2
-fi
-
 echo ""
-echo "PASS — all checks ok"
+echo "PASS — all checks ok (${#BUNDLED_SKILLS[@]} bundled skills)"
 exit 0
