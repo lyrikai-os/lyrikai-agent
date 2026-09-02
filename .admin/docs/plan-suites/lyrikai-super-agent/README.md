@@ -1,5 +1,7 @@
 # Plan suite — Lyrikai Super Agent
 
+> **Superseded (2026-09)** — harness v0 paper. Live product: [README.md](../../../README.md) + [ROUTING.md](../../../ROUTING.md).
+
 **Slug:** `lyrikai-super-agent`  
 **Status:** PAPER (BPS Step A complete — fill pending conductor GO)  
 **Placement:** Non-Hive · `lyrikai-agent` greenfield leaf  
